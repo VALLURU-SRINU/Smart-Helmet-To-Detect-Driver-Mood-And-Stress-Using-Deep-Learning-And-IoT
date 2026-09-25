@@ -1,0 +1,6 @@
+# Python Dependencies for Smart Helmet IoT Telemetry Backend
+Flask>=2.3.0
+flask-cors>=4.0.0
+pyserial>=3.5
+requests>=2.31.0
+python-dotenv>=1.0.0

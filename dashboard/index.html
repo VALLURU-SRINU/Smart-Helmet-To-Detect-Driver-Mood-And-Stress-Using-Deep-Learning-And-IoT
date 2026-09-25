@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Helmet IoT - Live Telemetry & Safety Dashboard</title>
+  <!-- Tailwind CSS via CDN for standalone portability -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS for real-time GPS live mapping -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js for real-time sensor graphs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .pulse-danger { animation: pulseDanger 1.2s infinite; }
+    @keyframes pulseDanger {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-lg">
+          🛡️
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            SMART HELMET IoT TELEMETRY
+            <span id="badge-source" class="text-xs px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/30 text-emerald-400 font-mono">LIVE</span>
+          </h1>
+          <p class="text-xs text-slate-400">Driver Mood, Stress, Sobriety & Vehicle Ignition Interlock</p>
+        </div>
+      </div>
+
+      <!-- Quick Status Indicators -->
+      <div class="flex items-center gap-4 text-xs font-mono">
+        <div class="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="text-slate-400">IGNITION:</span>
+          <span id="quick-ignition" class="text-emerald-400 font-bold">ARMED / ON</span>
+        </div>
+        <div class="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="text-slate-400">HELMET:</span>
+          <span id="quick-helmet" class="text-emerald-400 font-bold">WORN</span>
+        </div>
+        <div class="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="text-slate-400">SOBRIETY:</span>
+          <span id="quick-alcohol" class="text-emerald-400 font-bold">PASS (0.00%)</span>
+        </div>
+        <div class="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="text-slate-400">BATTERY:</span>
+          <span id="quick-battery" class="text-emerald-400 font-bold">82% (4.04V)</span>
+        </div>
+        <button id="btn-audio-toggle" onclick="toggleAudio()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 flex items-center gap-1.5 transition">
+          <span>🔊 Sound Alert</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Critical Hazard Warning Banner (Conditional) -->
+    <div id="hazard-banner" class="hidden border border-red-500/40 bg-red-950/40 p-4 rounded-xl flex items-center justify-between text-red-200">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl pulse-danger">🚨</span>
+        <div>
+          <h3 class="font-bold text-sm tracking-wide uppercase text-red-400" id="hazard-title">CRITICAL SAFETY VIOLATION</h3>
+          <p class="text-xs text-red-300/90" id="hazard-desc">Vehicle ignition is restricted. Immediate attention required.</p>
+        </div>
+      </div>
+      <button onclick="emergencyDispatch()" class="px-4 py-2 bg-red-600 hover:bg-red-500 font-semibold text-xs rounded-lg text-white transition">
+        Dispatch SOS Alert
+      </button>
+    </div>
+
+    <!-- Core Telemetry Metric Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+
+      <!-- Card 1: Helmet Wear Detection (IR Sensor) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span>HELMET FASTENING</span>
+          <span class="font-mono text-cyan-400">IR OPTICAL</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="card-helmet-status" class="text-2xl font-bold tracking-tight text-emerald-400">WORN SECURE</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-2" id="card-helmet-sub">Optical proximity beam continuous</p>
+        <div class="mt-4 pt-3 border-t border-slate-800 flex justify-between text-xs">
+          <span class="text-slate-500">Pin 2 (Pull-up)</span>
+          <span id="card-ir-raw" class="font-mono text-slate-300">ACTIVE LOW</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Sobriety / Alcohol Level (MQ-3 Sensor) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span>SOBRIETY CHECK (MQ-3)</span>
+          <span class="font-mono text-cyan-400">PIN A0</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="card-bac-val" class="text-2xl font-bold font-mono tracking-tight text-emerald-400">0.000%</span>
+          <span class="text-xs text-slate-400">BAC</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+          <div id="bar-bac" class="bg-emerald-500 h-full transition-all duration-300" style="width: 5%"></div>
+        </div>
+        <div class="mt-3 flex justify-between text-xs text-slate-500">
+          <span>Limit: 0.050% BAC</span>
+          <span id="card-adc-raw" class="font-mono text-slate-300">ADC: 135</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Driver Mood & Stress Level -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span>DRIVER MOOD & STRESS</span>
+          <span class="font-mono text-cyan-400">HR + GSR</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="card-stress-lvl" class="text-2xl font-bold tracking-tight text-cyan-400">CALM_FOCUSED</span>
+        </div>
+        <div class="flex items-center gap-3 mt-2 text-xs">
+          <span class="text-slate-400">Pulse: <strong id="card-bpm-val" class="text-white font-mono">72 BPM</strong></span>
+          <span class="text-slate-500">·</span>
+          <span class="text-slate-400">Index: <strong id="card-stress-idx" class="text-white font-mono">24/100</strong></span>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-800 flex justify-between text-xs">
+          <span class="text-slate-500">Conductance</span>
+          <span id="card-gsr-raw" class="font-mono text-slate-300">GSR: 285 Ω</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Helmet Battery Level (Simulated ADC Voltage Divider) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span>HELMET BATTERY</span>
+          <span class="font-mono text-cyan-400">DIVIDER A3</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="card-battery-percent" class="text-2xl font-bold font-mono tracking-tight text-emerald-400">82%</span>
+          <span id="card-battery-volts" class="text-xs text-slate-400 font-mono">4.04 V</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+          <div id="bar-battery" class="bg-emerald-500 h-full transition-all duration-300" style="width: 82%"></div>
+        </div>
+        <div class="mt-3 flex justify-between text-xs text-slate-500">
+          <span id="card-battery-status" class="text-slate-300 font-medium">Nominal Cell</span>
+          <span id="card-battery-adc" class="font-mono text-slate-300">ADC: 827</span>
+        </div>
+      </div>
+
+      <!-- Card 5: Vehicle Starter Relay -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span>IGNITION INTERLOCK</span>
+          <span class="font-mono text-cyan-400">RELAY PIN 8</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="card-relay-state" class="text-2xl font-bold tracking-tight text-emerald-400">ENABLED</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-2" id="card-relay-sub">Circuit closed. Starter armed.</p>
+        <div class="mt-4 pt-3 border-t border-slate-800 flex justify-between text-xs">
+          <span class="text-slate-500">Buzzer Alert</span>
+          <span id="card-buzzer-state" class="font-mono text-emerald-400">SILENT</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Center Section: Real-time GPS Tracker & Driver Health Graph -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- GPS Live Location Map -->
+      <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-white tracking-wide">REAL-TIME GPS TELEMETRY</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-cyan-400 font-mono">NEO-6M</span>
+          </div>
+          <div class="flex items-center gap-4 text-xs font-mono text-slate-400">
+            <span>Lat: <strong id="gps-lat" class="text-white">17.385044</strong></span>
+            <span>Lng: <strong id="gps-lng" class="text-white">78.486671</strong></span>
+            <span>Speed: <strong id="gps-speed" class="text-cyan-400">42.5 km/h</strong></span>
+            <span>Sats: <strong id="gps-sats" class="text-slate-300">8</strong></span>
+          </div>
+        </div>
+        <div id="map" class="h-80 w-full rounded-xl border border-slate-800 bg-slate-950"></div>
+      </div>
+
+      <!-- Real-time Physiological Waveform Chart -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-sm font-bold text-white tracking-wide">PULSE & STRESS INDEX</span>
+          <span class="text-xs text-slate-400 font-mono">Rolling 30s</span>
+        </div>
+        <div class="relative flex-1 min-h-[280px]">
+          <canvas id="chart-physio"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Section: Virtual LCD 16x2, Controls, and Incident Alert Log -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Virtual 16x2 LCD Display Emulator -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-3 text-xs text-slate-400">
+          <span class="font-bold text-white">HARDWARE 16x2 LCD MONITOR</span>
+          <span class="font-mono text-cyan-400">I2C 0x27</span>
+        </div>
+        <div class="bg-blue-950/80 border-4 border-blue-900 rounded-lg p-4 font-mono text-blue-300 shadow-inner">
+          <div id="lcd-line-1" class="text-base tracking-widest uppercase">IGN:ON CALM_FOCUSED</div>
+          <div id="lcd-line-2" class="text-base tracking-widest uppercase mt-1">HR:74bpm ST:24%   </div>
+        </div>
+        <div class="mt-4 flex items-center justify-between text-xs text-slate-400">
+          <span>Arduino Status: <strong class="text-emerald-400">POLLING 1000ms</strong></span>
+          <button onclick="sendCommand('TEST_BUZZER')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 text-xs">Test Buzzer</button>
+        </div>
+      </div>
+
+      <!-- Virtual Sensor Testing Controls (Interactive Playground) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+        <span class="text-sm font-bold text-white tracking-wide block mb-3">HARDWARE BENCH CONTROLS</span>
+        <div class="space-y-3 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-300">Helmet Worn (IR Proximity):</span>
+            <button id="toggle-sim-helmet" onclick="toggleSimHelmet()" class="px-3 py-1 rounded bg-emerald-600 font-semibold text-white">
+              Worn (Secure)
+            </button>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-300">Alcohol Test (MQ-3):</span>
+            <button id="toggle-sim-alcohol" onclick="toggleSimAlcohol()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300">
+              Sober (0.00%)
+            </button>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-300">Driver Stress State:</span>
+            <select id="select-sim-stress" onchange="changeSimStress(this.value)" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200">
+              <option value="NORMAL">Calm / Normal</option>
+              <option value="HIGH">High Stress</option>
+              <option value="DROWSY">Fatigued / Drowsy</option>
+              <option value="PANIC">Extreme Panic</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-300">Battery Level (Divider A3):</span>
+            <select id="select-sim-battery" onchange="changeSimBattery(this.value)" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200">
+              <option value="HIGH">Full / 95% (4.16V)</option>
+              <option value="NOMINAL" selected>Good / 82% (4.04V)</option>
+              <option value="MEDIUM">Medium / 55% (3.78V)</option>
+              <option value="LOW">Low / 14% (3.42V)</option>
+              <option value="CRITICAL">Critical / 4% (3.34V)</option>
+            </select>
+          </div>
+          <div class="pt-2 flex gap-2">
+            <button onclick="sendCommand('CALIBRATE_MQ3')" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded text-xs">
+              Zero Calibrate
+            </button>
+            <button onclick="sendCommand('OVERRIDE_RELAY_OFF')" class="flex-1 py-1.5 bg-red-950/60 hover:bg-red-900/80 border border-red-800 text-red-300 rounded text-xs">
+              Cut Ignition
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Alert & Incident Log -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm font-bold text-white tracking-wide">FLEET SAFETY LOGS</span>
+          <button onclick="clearAlerts()" class="text-xs text-slate-400 hover:text-slate-200 underline">Clear</button>
+        </div>
+        <div id="alerts-container" class="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1 text-xs">
+          <!-- Populated dynamically via JS -->
+          <div class="p-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-300 flex items-start gap-2">
+            <span class="text-emerald-400">✓</span>
+            <div>
+              <p class="font-semibold text-white">System Self-Test Passed</p>
+              <p class="text-slate-400 text-[11px]">All sensors calibrated. Starter relay ready.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- JavaScript Telemetry Handler & Map Logic -->
+  <script>
+    let audioContext = null;
+    let audioEnabled = false;
+    let map = null;
+    let marker = null;
+    let pathPolyline = null;
+    let chartInstance = null;
+    let coordinatesPath = [];
+
+    // Local simulation state if backend is offline
+    let localSim = {
+      helmetWorn: true,
+      alcoholDetected: false,
+      alcoholBac: 0.00,
+      stressMode: 'NORMAL',
+      batteryMode: 'NOMINAL',
+      batteryAdc: 827,
+      batteryVolts: 4.04,
+      batteryPercent: 82,
+      lat: 17.385044,
+      lng: 78.486671,
+      speed: 44.0
+    };
+
+    function initMap() {
+      map = L.map('map').setView([localSim.lat, localSim.lng], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      marker = L.marker([localSim.lat, localSim.lng]).addTo(map)
+        .bindPopup('<b>Smart Helmet V1</b><br>Rider Active').openPopup();
+
+      pathPolyline = L.polyline([], { color: '#06b6d4', weight: 4 }).addTo(map);
+    }
+
+    function initChart() {
+      const ctx = document.getElementById('chart-physio').getContext('2d');
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: Array(20).fill(''),
+          datasets: [
+            {
+              label: 'Pulse (BPM)',
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              data: Array(20).fill(74),
+              borderWidth: 2,
+              tension: 0.35,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Stress Index (%)',
+              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(6, 182, 212, 0.1)',
+              data: Array(20).fill(25),
+              borderWidth: 2,
+              tension: 0.35,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } }
+          },
+          scales: {
+            x: { display: false },
+            y: {
+              min: 40,
+              max: 160,
+              grid: { color: '#1e293b' },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            },
+            y1: {
+              position: 'right',
+              min: 0,
+              max: 100,
+              grid: { display: false },
+              ticks: { color: '#06b6d4', font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function toggleAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      audioEnabled = !audioEnabled;
+      const btn = document.getElementById('btn-audio-toggle');
+      if (audioEnabled) {
+        btn.classList.add('bg-cyan-900', 'text-cyan-200', 'border-cyan-600');
+        playBeep(880, 0.1);
+      } else {
+        btn.classList.remove('bg-cyan-900', 'text-cyan-200', 'border-cyan-600');
+      }
+    }
+
+    function playBeep(freq = 2400, duration = 0.25) {
+      if (!audioEnabled || !audioContext) return;
+      try {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, audioContext.currentTime);
+        gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.start();
+        osc.stop(audioContext.currentTime + duration);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch('/api/telemetry');
+        if (res.ok) {
+          const data = await res.json();
+          renderTelemetry(data.current);
+          return;
+        }
+      } catch (err) {
+        // Fallback to local simulation loop if no Flask server is running
+        simulateLocalStep();
+      }
+    }
+
+    function simulateLocalStep() {
+      // Advance coordinates along road
+      localSim.lat += 0.00015;
+      localSim.lng += 0.00012;
+
+      let hr = 74;
+      let stressIdx = 25;
+      let stressLvl = "CALM_FOCUSED";
+
+      if (localSim.stressMode === 'HIGH') {
+        hr = Math.floor(Math.random() * 15) + 110;
+        stressIdx = 82;
+        stressLvl = "ACUTE_STRESS";
+      } else if (localSim.stressMode === 'PANIC') {
+        hr = Math.floor(Math.random() * 20) + 130;
+        stressIdx = 94;
+        stressLvl = "PANIC/CRITICAL";
+      } else if (localSim.stressMode === 'DROWSY') {
+        hr = 52;
+        stressIdx = 62;
+        stressLvl = "DROWSY/FATIGUED";
+      }
+
+      const packet = {
+        device_id: "HELMET_01",
+        helmet_worn: localSim.helmetWorn,
+        alcohol_raw: localSim.alcoholDetected ? 560 : 135,
+        alcohol_bac: localSim.alcoholDetected ? 0.084 : 0.00,
+        alcohol_alert: localSim.alcoholDetected,
+        heart_rate_bpm: hr,
+        gsr_raw: 290,
+        stress_index: stressIdx,
+        stress_level: stressLvl,
+        ignition_state: localSim.helmetWorn && !localSim.alcoholDetected,
+        buzzer_state: !localSim.helmetWorn || localSim.alcoholDetected,
+        battery: {
+          raw_adc: localSim.batteryAdc,
+          voltage: localSim.batteryVolts,
+          percent: localSim.batteryPercent,
+          low: localSim.batteryPercent <= 20
+        },
+        gps: {
+          valid: true,
+          lat: localSim.lat,
+          lng: localSim.lng,
+          speed_kmh: 42.5,
+          satellites: 8
+        },
+        status_code: !localSim.helmetWorn ? "VIOLATION_NO_HELMET" : (localSim.alcoholDetected ? "VIOLATION_ALCOHOL" : "SAFE_RUNNING")
+      };
+
+      renderTelemetry(packet);
+    }
+
+    function renderTelemetry(data) {
+      // Helmet card
+      const helmetEl = document.getElementById('card-helmet-status');
+      const quickHelmet = document.getElementById('quick-helmet');
+      if (data.helmet_worn) {
+        helmetEl.textContent = 'WORN SECURE';
+        helmetEl.className = 'text-2xl font-bold tracking-tight text-emerald-400';
+        quickHelmet.textContent = 'WORN';
+        quickHelmet.className = 'text-emerald-400 font-bold';
+      } else {
+        helmetEl.textContent = 'HELMET OFF';
+        helmetEl.className = 'text-2xl font-bold tracking-tight text-red-400 pulse-danger';
+        quickHelmet.textContent = 'REMOVED!';
+        quickHelmet.className = 'text-red-400 font-bold';
+        playBeep(2400, 0.4);
+      }
+
+      // Alcohol card
+      const bacEl = document.getElementById('card-bac-val');
+      const quickAlc = document.getElementById('quick-alcohol');
+      const barBac = document.getElementById('bar-bac');
+      bacEl.textContent = (data.alcohol_bac || 0).toFixed(3) + '%';
+      document.getElementById('card-adc-raw').textContent = 'ADC: ' + data.alcohol_raw;
+
+      if (data.alcohol_alert) {
+        bacEl.className = 'text-2xl font-bold font-mono tracking-tight text-red-400 pulse-danger';
+        quickAlc.textContent = 'FAIL (INTOXICATED)';
+        quickAlc.className = 'text-red-400 font-bold';
+        barBac.className = 'bg-red-500 h-full transition-all duration-300';
+        barBac.style.width = '85%';
+        playBeep(2800, 0.5);
+      } else {
+        bacEl.className = 'text-2xl font-bold font-mono tracking-tight text-emerald-400';
+        quickAlc.textContent = 'PASS (0.00%)';
+        quickAlc.className = 'text-emerald-400 font-bold';
+        barBac.className = 'bg-emerald-500 h-full transition-all duration-300';
+        barBac.style.width = '8%';
+      }
+
+      // Stress card
+      document.getElementById('card-stress-lvl').textContent = data.stress_level;
+      document.getElementById('card-bpm-val').textContent = data.heart_rate_bpm + ' BPM';
+      document.getElementById('card-stress-idx').textContent = data.stress_index + '/100';
+
+      // Battery card (Voltage Divider A3)
+      const battPercent = data.battery ? data.battery.percent : (localSim.batteryPercent || 82);
+      const battVolts = data.battery ? (data.battery.voltage || 4.04) : (localSim.batteryVolts || 4.04);
+      const battAdc = data.battery ? (data.battery.raw_adc || 827) : (localSim.batteryAdc || 827);
+      const battLow = data.battery ? data.battery.low : (battPercent <= 20);
+
+      const battPercentEl = document.getElementById('card-battery-percent');
+      const battVoltsEl = document.getElementById('card-battery-volts');
+      const barBattEl = document.getElementById('bar-battery');
+      const quickBattEl = document.getElementById('quick-battery');
+      const statusBattEl = document.getElementById('card-battery-status');
+      const adcBattEl = document.getElementById('card-battery-adc');
+
+      battPercentEl.textContent = battPercent + '%';
+      battVoltsEl.textContent = battVolts.toFixed(2) + ' V';
+      barBattEl.style.width = Math.min(100, Math.max(4, battPercent)) + '%';
+      adcBattEl.textContent = 'ADC: ' + battAdc;
+      quickBattEl.textContent = `${battPercent}% (${battVolts.toFixed(2)}V)`;
+
+      if (battLow) {
+        battPercentEl.className = 'text-2xl font-bold font-mono tracking-tight text-red-400 pulse-danger';
+        barBattEl.className = 'bg-red-500 h-full transition-all duration-300';
+        quickBattEl.className = 'text-red-400 font-bold';
+        statusBattEl.textContent = 'Low Cell (<20%)';
+        statusBattEl.className = 'text-red-400 font-medium';
+      } else if (battPercent <= 50) {
+        battPercentEl.className = 'text-2xl font-bold font-mono tracking-tight text-amber-400';
+        barBattEl.className = 'bg-amber-500 h-full transition-all duration-300';
+        quickBattEl.className = 'text-amber-400 font-bold';
+        statusBattEl.textContent = 'Medium Charge';
+        statusBattEl.className = 'text-amber-300 font-medium';
+      } else {
+        battPercentEl.className = 'text-2xl font-bold font-mono tracking-tight text-emerald-400';
+        barBattEl.className = 'bg-emerald-500 h-full transition-all duration-300';
+        quickBattEl.className = 'text-emerald-400 font-bold';
+        statusBattEl.textContent = 'Nominal Cell';
+        statusBattEl.className = 'text-slate-300 font-medium';
+      }
+
+      // Ignition Relay card
+      const relayEl = document.getElementById('card-relay-state');
+      const quickIgnition = document.getElementById('quick-ignition');
+      const subRelay = document.getElementById('card-relay-sub');
+      const buzzerEl = document.getElementById('card-buzzer-state');
+
+      if (data.ignition_state) {
+        relayEl.textContent = 'ENABLED';
+        relayEl.className = 'text-2xl font-bold tracking-tight text-emerald-400';
+        quickIgnition.textContent = 'ARMED / ON';
+        quickIgnition.className = 'text-emerald-400 font-bold';
+        subRelay.textContent = 'Circuit closed. Starter armed.';
+        buzzerEl.textContent = 'SILENT';
+        buzzerEl.className = 'font-mono text-emerald-400';
+        document.getElementById('hazard-banner').classList.add('hidden');
+      } else {
+        relayEl.textContent = 'LOCKED OUT';
+        relayEl.className = 'text-2xl font-bold tracking-tight text-red-400 pulse-danger';
+        quickIgnition.textContent = 'LOCKED';
+        quickIgnition.className = 'text-red-400 font-bold';
+        subRelay.textContent = 'Emergency starter cutoff engaged.';
+        buzzerEl.textContent = 'ALARM BEEPING';
+        buzzerEl.className = 'font-mono text-red-400';
+
+        // Show hazard banner
+        const banner = document.getElementById('hazard-banner');
+        banner.classList.remove('hidden');
+        if (!data.helmet_worn) {
+          document.getElementById('hazard-title').textContent = 'HELMET REMOVAL VIOLATION';
+          document.getElementById('hazard-desc').textContent = 'IR sensor disconnected. Ignition disabled until helmet is worn.';
+        } else {
+          document.getElementById('hazard-title').textContent = 'SOBRIETY VIOLATION: ALCOHOL DETECTED';
+          document.getElementById('hazard-desc').textContent = 'MQ-3 sensor reading exceeds 0.05% BAC threshold. Ignition cutoff active.';
+        }
+      }
+
+      // Update LCD emulator
+      if (!data.helmet_worn) {
+        document.getElementById('lcd-line-1').textContent = '! WEAR HELMET ! ';
+        document.getElementById('lcd-line-2').textContent = 'ENGINE LOCKED   ';
+      } else if (data.alcohol_alert) {
+        document.getElementById('lcd-line-1').textContent = 'ALCOHOL DETECTED';
+        document.getElementById('lcd-line-2').textContent = `BAC:${(data.alcohol_bac).toFixed(2)}% LOCK  `;
+      } else {
+        document.getElementById('lcd-line-1').textContent = `IGN:ON ${data.stress_level.substring(0, 9)}`;
+        document.getElementById('lcd-line-2').textContent = `HR:${data.heart_rate_bpm}bpm ST:${data.stress_index}%`;
+      }
+
+      // Update Map
+      if (data.gps && data.gps.lat && data.gps.lng) {
+        document.getElementById('gps-lat').textContent = data.gps.lat.toFixed(6);
+        document.getElementById('gps-lng').textContent = data.gps.lng.toFixed(6);
+        document.getElementById('gps-speed').textContent = data.gps.speed_kmh.toFixed(1) + ' km/h';
+        document.getElementById('gps-sats').textContent = data.gps.satellites || 8;
+
+        const newPos = [data.gps.lat, data.gps.lng];
+        if (marker) marker.setLatLng(newPos);
+        coordinatesPath.push(newPos);
+        if (coordinatesPath.length > 50) coordinatesPath.shift();
+        if (pathPolyline) pathPolyline.setLatLngs(coordinatesPath);
+      }
+
+      // Update Chart
+      if (chartInstance) {
+        const labels = chartInstance.data.labels;
+        const hrDataset = chartInstance.data.datasets[0].data;
+        const stressDataset = chartInstance.data.datasets[1].data;
+
+        hrDataset.push(data.heart_rate_bpm || 72);
+        hrDataset.shift();
+        stressDataset.push(data.stress_index || 25);
+        stressDataset.shift();
+
+        chartInstance.update('none');
+      }
+    }
+
+    function toggleSimHelmet() {
+      localSim.helmetWorn = !localSim.helmetWorn;
+      const btn = document.getElementById('toggle-sim-helmet');
+      if (localSim.helmetWorn) {
+        btn.textContent = 'Worn (Secure)';
+        btn.className = 'px-3 py-1 rounded bg-emerald-600 font-semibold text-white';
+      } else {
+        btn.textContent = 'Off (Unfastened)';
+        btn.className = 'px-3 py-1 rounded bg-red-600 font-semibold text-white';
+        addAlertLog('HELMET_OFF', 'Helmet unfastened while operating vehicle');
+      }
+      postSimChange();
+    }
+
+    function toggleSimAlcohol() {
+      localSim.alcoholDetected = !localSim.alcoholDetected;
+      const btn = document.getElementById('toggle-sim-alcohol');
+      if (localSim.alcoholDetected) {
+        btn.textContent = 'Intoxicated (0.084%)';
+        btn.className = 'px-3 py-1 rounded bg-red-600 font-semibold text-white';
+        addAlertLog('ALCOHOL_ALERT', 'MQ-3 intoxication spike detected (>0.05% BAC)');
+      } else {
+        btn.textContent = 'Sober (0.00%)';
+        btn.className = 'px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300';
+      }
+      postSimChange();
+    }
+
+    function changeSimStress(val) {
+      localSim.stressMode = val;
+      postSimChange();
+    }
+
+    function changeSimBattery(val) {
+      localSim.batteryMode = val;
+      if (val === 'HIGH') {
+        localSim.batteryVolts = 4.16;
+        localSim.batteryPercent = 95;
+        localSim.batteryAdc = 852;
+      } else if (val === 'NOMINAL') {
+        localSim.batteryVolts = 4.04;
+        localSim.batteryPercent = 82;
+        localSim.batteryAdc = 827;
+      } else if (val === 'MEDIUM') {
+        localSim.batteryVolts = 3.78;
+        localSim.batteryPercent = 55;
+        localSim.batteryAdc = 774;
+      } else if (val === 'LOW') {
+        localSim.batteryVolts = 3.42;
+        localSim.batteryPercent = 14;
+        localSim.batteryAdc = 700;
+        addAlertLog('LOW_BATTERY', 'Helmet battery below 20% (3.42V). Recharge recommended.');
+      } else if (val === 'CRITICAL') {
+        localSim.batteryVolts = 3.34;
+        localSim.batteryPercent = 4;
+        localSim.batteryAdc = 684;
+        addAlertLog('CRITICAL_BATTERY', 'Helmet battery critical (3.34V). Telemetry transmitter may shut down.');
+      }
+      simulateLocalStep();
+    }
+
+    async function postSimChange() {
+      try {
+        await fetch('/api/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            helmet_worn: localSim.helmetWorn,
+            force_alcohol: localSim.alcoholDetected,
+            stress_mode: localSim.stressMode
+          })
+        });
+      } catch (e) {
+        // Run locally
+      }
+      simulateLocalStep();
+    }
+
+    function addAlertLog(type, msg) {
+      const c = document.getElementById('alerts-container');
+      const time = new Date().toLocaleTimeString();
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-lg bg-red-950/40 border border-red-900/60 text-red-200 flex items-start gap-2';
+      item.innerHTML = `
+        <span class="text-red-400">⚠️</span>
+        <div>
+          <p class="font-semibold text-white">${type} · <span class="font-mono text-slate-400">${time}</span></p>
+          <p class="text-slate-300 text-[11px]">${msg}</p>
+        </div>
+      `;
+      c.prepend(item);
+    }
+
+    function clearAlerts() {
+      document.getElementById('alerts-container').innerHTML = '';
+      try { fetch('/api/alerts/clear', { method: 'POST' }); } catch (e) {}
+    }
+
+    async function sendCommand(cmd) {
+      try {
+        const res = await fetch('/api/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        const d = await res.json();
+        alert(d.result || 'Command sent');
+      } catch (e) {
+        if (cmd === 'TEST_BUZZER') playBeep(2400, 0.4);
+        else alert('Simulated command executed: ' + cmd);
+      }
+    }
+
+    function emergencyDispatch() {
+      playBeep(3000, 0.6);
+      alert(`🚨 SOS DISPATCH TRIGGERED!\nCoordinates: ${localSim.lat.toFixed(6)}, ${localSim.lng.toFixed(6)}\nEmergency SMS simulated to registered fleet contacts & police dispatch.`);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      initChart();
+      setInterval(fetchTelemetry, 1000);
+    });
+  </script>
+</body>
+</html>
